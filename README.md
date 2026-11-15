@@ -39,5 +39,4 @@ No build step or package installation is required. The app loads Google Fonts fr
 - The original inline CSS has been moved to `css/style.css`.
 - The original inline JavaScript has been moved to `js/script.js`.
 - Weather and Reports are separate views accessible from the side navigation; the trip planner remains the default view.
-- Weather and Reports are separate views accessible from the side navigation; the trip planner remains the default view.
 - Transit estimates and the weather snapshot are illustrative sample information, not live service or weather data.
