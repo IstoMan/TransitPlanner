@@ -32,7 +32,7 @@ const WIN={M:[540,570,555,'09:00–09:30'],A:[840,900,870,'14:00–15:00'],E:[10
 const wOf=t=>{let b=null,bd=1e9;for(const k in WIN){const d=Math.abs(t-WIN[k][2]);if(d<bd){bd=d;b=k}}return bd<=180?b:null};
 const avg=x=>x.reduce((s,v)=>s+v,0)/x.length;
 const randomSource=seed=>()=>{let x=seed+=0x6D2B79F5;x=Math.imul(x^x>>>15,x|1);x^=x+Math.imul(x^x>>>7,x|61);return((x^x>>>14)>>>0)/4294967296};
-const trainingRows=P.flatMap(p=>Object.keys(WIN).map(w=>({x:[WIN[w][2]/1440,p.la,p.lo],y:A[p.n][w][3]})));
+const trainingRows=P.flatMap(p=>Object.keys(WIN).map(w=>({window:w,x:[WIN[w][2]/1440,p.la,p.lo],y:A[p.n][w][3]})));
 const squaredError=samples=>{let sum=0,squares=0;samples.forEach(s=>{sum+=s.y;squares+=s.y*s.y});return squares-sum*sum/samples.length};
 function trainTree(samples,rand,depth=0){
   const mean=avg(samples.map(s=>s.y)),leaf={value:mean};
@@ -49,12 +49,29 @@ function trainTree(samples,rand,depth=0){
   if(!best)return leaf;
   return{feature:best.feature,threshold:best.threshold,left:trainTree(best.left,rand,depth+1),right:trainTree(best.right,rand,depth+1)};
 }
-const forest=Array.from({length:32},(_,treeIndex)=>{
-  const rand=randomSource(8421+treeIndex),bootstrap=trainingRows.map(()=>trainingRows[Math.floor(rand()*trainingRows.length)]);
+const TREE_COUNT=32;
+const trainForest=(rows,seedBase=8421)=>Array.from({length:TREE_COUNT},(_,treeIndex)=>{
+  const rand=randomSource(seedBase+treeIndex),bootstrap=rows.map(()=>rows[Math.floor(rand()*rows.length)]);
   return trainTree(bootstrap,rand);
 });
+const forest=trainForest(trainingRows);
 function predictTree(tree,x){return Object.prototype.hasOwnProperty.call(tree,'value')?tree.value:predictTree(x[tree.feature]<=tree.threshold?tree.left:tree.right,x)}
-const predictSpeed=(a,b,t)=>avg(forest.map(tree=>predictTree(tree,[t/1440,(a.la+b.la)/2,(a.lo+b.lo)/2])));
+const predictForest=(trees,x)=>avg(trees.map(tree=>predictTree(tree,x)));
+const validation=(()=>{
+  const errors=[],baselineErrors=[],windows=Object.keys(WIN);
+  windows.forEach((heldWindow,foldIndex)=>{
+    const train=trainingRows.filter(row=>row.window!==heldWindow);
+    const test=trainingRows.filter(row=>row.window===heldWindow);
+    const foldForest=trainForest(train,20000+foldIndex*TREE_COUNT),baseline=avg(train.map(row=>row.y));
+    test.forEach(row=>{
+      errors.push(predictForest(foldForest,row.x)-row.y);
+      baselineErrors.push(baseline-row.y);
+    });
+  });
+  const summarize=values=>({mae:avg(values.map(error=>Math.abs(error))),rmse:Math.sqrt(avg(values.map(error=>error*error)))});
+  return{samples:errors.length,folds:windows.length,forest:summarize(errors),baseline:summarize(baselineErrors)};
+})();
+const predictSpeed=(a,b,t)=>predictForest(forest,[t/1440,(a.la+b.la)/2,(a.lo+b.lo)/2]);
 const nowT=()=>{const d=new Date();return d.getHours()*60+d.getMinutes()};
 const curT=()=>live?nowT():(v=>+v[0]*60+ +v[1])($('time').value.split(':'));
 const svc=(p,w)=>w?A[p.n][w][1]:0;
@@ -156,4 +173,10 @@ showPage();
 $('time').value=fmt(nowT());
 let lastMin=-1;setInterval(()=>{if(live){const m=nowT();$('time').value=fmt(m);if(m!==lastMin){lastMin=m;calc()}}},1000);
 (()=>{document.querySelectorAll('.wx').forEach(wx=>{const r=+wx.dataset.rain,k=r>=60?'stormy':r>=30?'rainy':'fair';wx.classList.add(k);wx.querySelector('small').textContent='Weather · Pune · '+(k==='stormy'?'Rain likely':k==='rainy'?'Rain possible':'Pleasant')});document.querySelectorAll('.wx .days div').forEach(d=>{if(+d.dataset.r>=30)d.classList.add('wet')})})();
+$('cvSamples').textContent=String(validation.samples);
+$('cvFolds').textContent=String(validation.folds);
+$('cvMae').textContent=validation.forest.mae.toFixed(1)+' km/h';
+$('cvRmse').textContent=validation.forest.rmse.toFixed(1)+' km/h';
+$('baselineMae').textContent=validation.baseline.mae.toFixed(1)+' km/h';
+$('baselineRmse').textContent=validation.baseline.rmse.toFixed(1)+' km/h';
 count($('k1'),G.trips);calc();

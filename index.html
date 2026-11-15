@@ -88,6 +88,19 @@
     <small id="rfDetails">Select a trip to see its estimate.</small>
     <small>32 bootstrap regression trees · input features: time of day and location · no live data</small>
   </section>
+  <section class="card c12 evaluation-report" aria-labelledby="evaluationTitle">
+    <h3 id="evaluationTitle">Held-out sample evaluation</h3>
+    <p class="page-intro">Leave-one-time-window-out cross-validation: each window is tested against a forest trained on the other two. The baseline predicts the training-window mean speed.</p>
+    <div class="evaluation-metrics">
+      <div class="evaluation-metric"><small>Test samples</small><strong id="cvSamples">—</strong></div>
+      <div class="evaluation-metric"><small>Held-out windows</small><strong id="cvFolds">—</strong></div>
+      <div class="evaluation-metric"><small>Forest MAE</small><strong id="cvMae">—</strong></div>
+      <div class="evaluation-metric"><small>Forest RMSE</small><strong id="cvRmse">—</strong></div>
+      <div class="evaluation-metric"><small>Baseline MAE</small><strong id="baselineMae">—</strong></div>
+      <div class="evaluation-metric"><small>Baseline RMSE</small><strong id="baselineRmse">—</strong></div>
+    </div>
+    <small id="cvSummary">These metrics describe the bundled sample data only; they are not a measure of real-world transit accuracy.</small>
+  </section>
   <section class="card c12" id="sampleCoverage" style="padding:0;overflow:hidden">
     <div class="mh"><h3>Pune map · schematic</h3><button class="chip on" id="tz" type="button" aria-pressed="true">Highlight sparse samples</button></div>
     <svg id="map" viewBox="0 0 800 600" role="img" aria-label="Schematic Pune map with places, metro lines and the selected trip">

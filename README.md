@@ -8,6 +8,7 @@ An interactive Pune transit planner with bus-speed estimates powered by a Random
 - **Features:** Time of day and the trip's midpoint latitude and longitude.
 - **Model:** 32 deterministically seeded regression trees. Each tree trains on a bootstrap sample and uses randomized feature selection when splitting.
 - **Prediction:** The model averages the trees' predicted speeds. The planner uses this estimate for bus travel times when a direct historical route sample is unavailable; direct route samples retain priority.
+- **Evaluation:** Reports compares leave-one-time-window-out model errors with a training-mean baseline. Dataset limitations and the evaluation method are documented in [`data/README.md`](data/README.md).
 - **Scope:** Predictions use sample data and are not live transit information. No accuracy score is claimed.
 
 ## Project structure
@@ -22,7 +23,7 @@ Pune-Transit-Planner/
 ├── assets/
 │   ├── images/         # Add image assets here
 │   └── icons/          # Add icon assets here
-├── data/               # Add external datasets here
+├── data/               # Dataset notes and sample data
 ├── .gitignore
 ├── run.bat             # Opens the app in your default browser
 └── README.md
