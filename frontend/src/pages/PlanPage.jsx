@@ -85,6 +85,7 @@ export default function PlanPage({
         destinationName={to}
         routeColor={optionColor(selected)}
         mode={selected?.id}
+        viaName={selected?.via}
         showRoute={showRoute}
         onPlace={onPlace}
       />

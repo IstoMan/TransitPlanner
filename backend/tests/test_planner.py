@@ -21,6 +21,9 @@ def test_direct_sample_beats_the_model_and_metro_needs_both_stations(planned):
     metro = historical["options"][1]
     assert metro["available"] is False
     assert metro["minutes"] is None
+    assert metro["via"] is None
+    assert metro["legs"] is None
+    assert metro["note"] == "The nearest station is already the metro end"
 
     predicted = plan_trip(store, forest, "Pimpri", "Hinjawadi", 9 * 60 + 15, 1)
     assert predicted["bus_speed_source"] == "model"
@@ -34,12 +37,44 @@ def test_metro_is_offered_when_both_places_have_a_station(planned):
     metro = next(option for option in result["options"] if option["id"] == "metro")
     assert result["short_trip"] is True
     assert metro["available"] is True
+    assert metro["name"] == "Metro"
+    assert metro["via"] is None
+    assert metro["access_mode"] is None
+    assert metro["legs"] is None
     assert metro["fare_inr"] == next(
         option["fare_inr"]
         for option in plan_trip(store, forest, "Deccan", "Shivajinagar", 9 * 60 + 15, 1)["options"]
         if option["id"] == "metro"
     ) * 2
     assert any(option["fastest"] for option in result["options"])
+
+
+def test_mixed_metro_rides_the_nearest_other_station(planned):
+    store, forest = planned
+    result = plan_trip(store, forest, "Hinjawadi", "Swargate", 9 * 60 + 15, 1)
+    metro = next(option for option in result["options"] if option["id"] == "metro")
+    assert metro["available"] is True
+    assert metro["via"] == "Pimpri"
+    assert metro["access_mode"] in {"bus", "cab", "auto"}
+    assert [leg["mode"] for leg in metro["legs"]] == [metro["access_mode"], "metro"]
+    assert [(leg["from"], leg["to"]) for leg in metro["legs"]] == [
+        ("Hinjawadi", "Pimpri"),
+        ("Pimpri", "Swargate"),
+    ]
+    assert metro["minutes"] == pytest.approx(sum(leg["minutes"] for leg in metro["legs"]))
+    assert metro["fare_inr"] == pytest.approx(sum(leg["fare_inr"] for leg in metro["legs"]))
+    assert metro["name"] == f"{metro['access_mode'].title()} + Metro"
+    assert "Pimpri" in metro["note"]
+
+    onward = plan_trip(store, forest, "Deccan", "Wagholi", 9 * 60 + 15, 2)
+    mixed = next(option for option in onward["options"] if option["id"] == "metro")
+    assert mixed["via"] == "Viman Nagar"
+    assert [leg["mode"] for leg in mixed["legs"]] == ["metro", mixed["access_mode"]]
+    assert mixed["legs"][0]["from"] == "Deccan"
+    assert mixed["legs"][0]["to"] == "Viman Nagar"
+    assert mixed["legs"][1]["to"] == "Wagholi"
+    assert mixed["minutes"] == pytest.approx(sum(leg["minutes"] for leg in mixed["legs"]))
+    assert mixed["fare_inr"] == pytest.approx(sum(leg["fare_inr"] for leg in mixed["legs"]))
 
 
 def test_peak_cab_fare_and_passenger_split(planned):

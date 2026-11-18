@@ -71,7 +71,7 @@ function straightPath(origin, destination) {
   return `M${start.x} ${start.y}L${end.x} ${end.y}`;
 }
 
-function roadPath(geometry, origin, destination) {
+function roadPointsBetween(geometry, origin, destination) {
   const byName = new Map((geometry?.places || []).map((place) => [place.name, place]));
   const graph = new Map();
   for (const chain of geometry?.roads || []) {
@@ -88,8 +88,8 @@ function roadPath(geometry, origin, destination) {
     }
   }
   const names = shortestPath(graph, origin.name, destination.name);
-  if (!names) return '';
-  return pathFromPoints(names.map((name) => project(byName.get(name).lat, byName.get(name).lon)));
+  if (!names) return null;
+  return names.map((name) => project(byName.get(name).lat, byName.get(name).lon));
 }
 
 function metroNetwork(geometry) {
@@ -126,23 +126,55 @@ function nearestVertex(points, place) {
   return bestKey;
 }
 
-function metroPath(geometry, origin, destination) {
+function metroPointsBetween(geometry, origin, destination) {
   const { points, graph } = metroNetwork(geometry);
-  if (!points.size) return '';
+  if (!points.size) return null;
   const startKey = nearestVertex(points, origin);
   const endKey = nearestVertex(points, destination);
   const keys = shortestPath(graph, startKey, endKey);
-  if (!keys) return '';
+  if (!keys) return null;
   const drawn = keys.map((key) => points.get(key));
   if (coordKey(origin.lat, origin.lon) !== keys[0]) drawn.unshift(project(origin.lat, origin.lon));
   if (coordKey(destination.lat, destination.lon) !== keys[keys.length - 1]) drawn.push(project(destination.lat, destination.lon));
-  return pathFromPoints(drawn);
+  return drawn;
 }
 
-export function routePath(geometry, origin, destination, mode) {
+function segmentPoints(geometry, origin, destination, network) {
+  const along = network === 'metro'
+    ? metroPointsBetween(geometry, origin, destination)
+    : roadPointsBetween(geometry, origin, destination);
+  if (along && along.length >= 2) return along;
+  return [project(origin.lat, origin.lon), project(destination.lat, destination.lon)];
+}
+
+function joinPoints(first, second) {
+  const combined = first.slice();
+  const rest = second.slice();
+  if (pixelDistance(combined[combined.length - 1], rest[0]) < 0.5) rest.shift();
+  return combined.concat(rest);
+}
+
+export function routePath(geometry, origin, destination, mode, via) {
   if (!origin || !destination || origin.name === destination.name) return '';
+  if (mode === 'metro' && via && via.name !== origin.name && via.name !== destination.name) {
+    const accessFirst = !origin.metro;
+    const feeder = segmentPoints(
+      geometry,
+      accessFirst ? origin : via,
+      accessFirst ? via : destination,
+      'road',
+    );
+    const rail = segmentPoints(
+      geometry,
+      accessFirst ? via : origin,
+      accessFirst ? destination : via,
+      'metro',
+    );
+    const points = accessFirst ? joinPoints(feeder, rail) : joinPoints(rail, feeder);
+    return pathFromPoints(points) || straightPath(origin, destination);
+  }
   const alongNetwork = mode === 'metro'
-    ? metroPath(geometry, origin, destination)
-    : roadPath(geometry, origin, destination);
-  return alongNetwork || straightPath(origin, destination);
+    ? metroPointsBetween(geometry, origin, destination)
+    : roadPointsBetween(geometry, origin, destination);
+  return (alongNetwork && pathFromPoints(alongNetwork)) || straightPath(origin, destination);
 }

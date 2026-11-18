@@ -19,6 +19,7 @@ export default function MapView({
   destinationName,
   routeColor,
   mode,
+  viaName,
   showRoute,
   sparseNames,
   onPlace,
@@ -29,12 +30,13 @@ export default function MapView({
   const byName = useMemo(() => new Map(places.map((place) => [place.name, place])), [places]);
   const origin = byName.get(originName);
   const destination = byName.get(destinationName);
+  const via = viaName ? byName.get(viaName) : null;
   const originPoint = origin ? project(origin.lat, origin.lon) : null;
   const destinationPoint = destination ? project(destination.lat, destination.lon) : null;
   const different = Boolean(origin && destination && origin.name !== destination.name);
   const routeD = useMemo(
-    () => (different ? routePath(geometry, origin, destination, mode) : ''),
-    [different, geometry, origin, destination, mode],
+    () => (different ? routePath(geometry, origin, destination, mode, via) : ''),
+    [different, geometry, origin, destination, mode, via],
   );
   const drawRoute = Boolean(showRoute && routeD);
   const sparse = new Set(sparseNames || []);

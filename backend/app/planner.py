@@ -50,6 +50,172 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{suffix}"
 
 
+def road_distance(origin: Place, destination: Place) -> float:
+    return haversine_km(origin, destination) * ROAD_FACTOR
+
+
+def _bus_estimate(
+    store: Store,
+    forest: SpeedForest,
+    origin: Place,
+    destination: Place,
+    minutes: int,
+    passengers: int,
+    window,
+    model_speed: float | None = None,
+) -> dict:
+    distance = road_distance(origin, destination)
+    if model_speed is None:
+        model_speed = forest.predict(
+            minutes,
+            (origin.lat + destination.lat) / 2,
+            (origin.lon + destination.lon) / 2,
+        )
+    route = store.route(origin.name, destination.name)
+    historical_speed = None
+    if route is not None and window is not None:
+        historical_speed = route["speeds_kmh"].get(window.key)
+    direct = historical_speed is not None
+    bus_speed = float(historical_speed if direct else model_speed)
+    observations = store.observations(origin.name, window)
+    if window is not None:
+        headway = min(20, max(3, (window.end - window.start) / max(1, observations) / 2))
+    else:
+        headway = 10
+    transfer = 0 if direct else 10
+    return {
+        "minutes": distance / bus_speed * 60 + headway + 10 + transfer,
+        "fare_inr": (8 + 1.5 * distance) * passengers,
+        "distance": distance,
+        "speed": bus_speed,
+        "direct": direct,
+        "headway": headway,
+        "route": route,
+        "model_speed": float(model_speed),
+    }
+
+
+def _cab_estimate(distance: float, traffic_speed: float, peak: bool, passengers: int) -> dict:
+    cabs = math.ceil(passengers / 4)
+    surge = 1.15 if peak else 1
+    return {
+        "minutes": distance / (traffic_speed * 1.25) * 60 + 5,
+        "fare_inr": (60 + 15 * distance) * surge * cabs,
+        "vehicles": cabs,
+    }
+
+
+def _auto_estimate(distance: float, traffic_speed: float, passengers: int) -> dict:
+    autos = math.ceil(passengers / 3)
+    return {
+        "minutes": distance / (traffic_speed * 1.1) * 60 + 4,
+        "fare_inr": (30 + 17 * max(0, distance - 1.5)) * autos,
+        "vehicles": autos,
+    }
+
+
+def _metro_estimate(distance: float, passengers: int) -> dict:
+    return {
+        "minutes": distance * 0.95 / 32 * 60 + 6 + 12,
+        "fare_inr": min(35, max(10, js_round(distance * 1.8))) * passengers,
+    }
+
+
+def _nearest_metro(store: Store, place: Place) -> Place | None:
+    best = None
+    best_distance = None
+    for candidate in store.places:
+        if not candidate.metro:
+            continue
+        distance = haversine_km(place, candidate)
+        if best is None or distance < best_distance:
+            best = candidate
+            best_distance = distance
+    return best
+
+
+def _leg(mode: str, origin: Place, destination: Place, estimate: dict) -> dict:
+    return {
+        "mode": mode,
+        "from": origin.name,
+        "to": destination.name,
+        "minutes": estimate["minutes"],
+        "fare_inr": estimate["fare_inr"],
+    }
+
+
+def _unavailable_metro(note: str, sub: str) -> dict:
+    return {
+        "id": "metro",
+        "name": "Metro",
+        "available": False,
+        "minutes": None,
+        "fare_inr": None,
+        "note": note,
+        "sub": sub,
+        "kind": "metro",
+        "via": None,
+        "access_mode": None,
+        "legs": None,
+    }
+
+
+def _mixed_metro_option(
+    store: Store,
+    forest: SpeedForest,
+    served: Place,
+    unserved: Place,
+    access_first: bool,
+    minutes: int,
+    passengers: int,
+    window,
+    traffic_speed: float,
+    peak: bool,
+) -> dict:
+    gateway = _nearest_metro(store, unserved)
+    if gateway is None or gateway.name == served.name:
+        return _unavailable_metro(
+            "The nearest station is already the metro end",
+            "Bus, cab, and auto already cover this trip",
+        )
+
+    if access_first:
+        bus_origin, bus_destination = unserved, gateway
+    else:
+        bus_origin, bus_destination = gateway, unserved
+    feeder_distance = road_distance(unserved, gateway)
+    choices = (
+        ("bus", "Bus", _bus_estimate(store, forest, bus_origin, bus_destination, minutes, passengers, window)),
+        ("cab", "Cab", _cab_estimate(feeder_distance, traffic_speed, peak, passengers)),
+        ("auto", "Auto", _auto_estimate(feeder_distance, traffic_speed, passengers)),
+    )
+    access_mode, access_label, feeder = min(choices, key=lambda item: item[2]["minutes"])
+    metro = _metro_estimate(road_distance(gateway, served), passengers)
+    if access_first:
+        access_leg = _leg(access_mode, unserved, gateway, feeder)
+        metro_leg = _leg("metro", gateway, served, metro)
+        legs = [access_leg, metro_leg]
+        note = f"{access_label} to {gateway.name}, then metro to {served.name}"
+    else:
+        metro_leg = _leg("metro", served, gateway, metro)
+        access_leg = _leg(access_mode, gateway, unserved, feeder)
+        legs = [metro_leg, access_leg]
+        note = f"Metro to {gateway.name}, then {access_label.lower()} to {unserved.name}"
+    return {
+        "id": "metro",
+        "name": f"{access_label} + Metro",
+        "available": True,
+        "minutes": feeder["minutes"] + metro["minutes"],
+        "fare_inr": feeder["fare_inr"] + metro["fare_inr"],
+        "note": note,
+        "sub": f"Feeder ~{js_round(feeder['minutes'])} min · metro ~{js_round(metro['minutes'])} min",
+        "kind": "metro",
+        "via": gateway.name,
+        "access_mode": access_mode,
+        "legs": legs,
+    }
+
+
 def plan_trip(
     store: Store,
     forest: SpeedForest,
@@ -71,84 +237,104 @@ def plan_trip(
         (origin.lat + destination.lat) / 2,
         (origin.lon + destination.lon) / 2,
     )
-    distance = haversine_km(origin, destination) * ROAD_FACTOR
+    distance = road_distance(origin, destination)
     short = distance <= SHORT_KM
     peak = window is not None and window.key in {"M", "E"}
-    route = store.route(origin.name, destination.name)
-    historical_speed = None
-    if route is not None and window is not None:
-        historical_speed = route["speeds_kmh"].get(window.key)
-    direct = historical_speed is not None
-    bus_speed = float(historical_speed if direct else model_speed)
-    observations = store.observations(origin.name, window)
-    if window is not None:
-        headway = min(20, max(3, (window.end - window.start) / max(1, observations) / 2))
-    else:
-        headway = 10
-    transfer = 0 if direct else 10
-    bus_minutes = distance / bus_speed * 60 + headway + 10 + transfer
+    bus = _bus_estimate(
+        store, forest, origin, destination, minutes, passengers, window, model_speed
+    )
+    direct = bus["direct"]
+    bus_speed = bus["speed"]
+    route = bus["route"]
     traffic_speed = store.series_speed(window)
 
     if direct:
         lines = ", ".join(route["lines"])
         bus_note = f"Historical route sample: {lines} · ~{js_round(bus_speed)} km/h"
-        bus_sub = f"Includes ~{js_round(headway)} min wait and ~10 min walking"
+        bus_sub = f"Includes ~{js_round(bus['headway'])} min wait and ~10 min walking"
     else:
         bus_note = "No direct route in the samples; a transfer is assumed"
-        bus_sub = f"Includes ~{js_round(headway)} min wait and ~10 min walking plus a transfer"
+        bus_sub = f"Includes ~{js_round(bus['headway'])} min wait and ~10 min walking plus a transfer"
 
     options = [
         {
             "id": "bus",
             "name": "Bus",
             "available": True,
-            "minutes": bus_minutes,
-            "fare_inr": (8 + 1.5 * distance) * passengers,
+            "minutes": bus["minutes"],
+            "fare_inr": bus["fare_inr"],
             "note": bus_note,
             "sub": bus_sub,
             "kind": "bus",
         }
     ]
     if origin.metro and destination.metro:
-        metro_fare = min(35, max(10, js_round(distance * 1.8))) * passengers
+        metro = _metro_estimate(distance, passengers)
         options.append(
             {
                 "id": "metro",
                 "name": "Metro",
                 "available": True,
-                "minutes": distance * 0.95 / 32 * 60 + 6 + 12,
-                "fare_inr": metro_fare,
+                "minutes": metro["minutes"],
+                "fare_inr": metro["fare_inr"],
                 "note": "Both places are near a metro station · ~32 km/h average",
                 "sub": "Includes ~6 min wait and ~12 min to reach and enter stations",
                 "kind": "metro",
+                "via": None,
+                "access_mode": None,
+                "legs": None,
             }
         )
+    elif origin.metro or destination.metro:
+        if origin.metro:
+            options.append(
+                _mixed_metro_option(
+                    store,
+                    forest,
+                    origin,
+                    destination,
+                    False,
+                    minutes,
+                    passengers,
+                    window,
+                    traffic_speed,
+                    peak,
+                )
+            )
+        else:
+            options.append(
+                _mixed_metro_option(
+                    store,
+                    forest,
+                    destination,
+                    origin,
+                    True,
+                    minutes,
+                    passengers,
+                    window,
+                    traffic_speed,
+                    peak,
+                )
+            )
     else:
         options.append(
-            {
-                "id": "metro",
-                "name": "Metro",
-                "available": False,
-                "minutes": None,
-                "fare_inr": None,
-                "note": "Not available for this pair",
-                "sub": "Both places need a metro station nearby",
-                "kind": "metro",
-            }
+            _unavailable_metro(
+                "Not available for this pair",
+                "Both places need a metro station nearby",
+            )
         )
 
-    cabs = math.ceil(passengers / 4)
-    autos = math.ceil(passengers / 3)
-    surge = 1.15 if peak else 1
+    cab = _cab_estimate(distance, traffic_speed, peak, passengers)
+    auto = _auto_estimate(distance, traffic_speed, passengers)
     people = _plural(passengers, "passenger")
     options.append(
         {
             "id": "cab",
             "name": "Cab",
             "available": True,
-            "minutes": distance / (traffic_speed * 1.25) * 60 + 5,
-            "fare_inr": (60 + 15 * distance) * surge * cabs,
-            "note": f"{_plural(cabs, 'cab')} for {people} · door to door",
+            "minutes": cab["minutes"],
+            "fare_inr": cab["fare_inr"],
+            "note": f"{_plural(cab['vehicles'], 'cab')} for {people} · door to door",
             "sub": (
                 "Typical city rate with a peak-hour uplift; not a provider quote"
                 if peak
@@ -162,9 +348,9 @@ def plan_trip(
             "id": "auto",
             "name": "Auto",
             "available": True,
-            "minutes": distance / (traffic_speed * 1.1) * 60 + 4,
-            "fare_inr": (30 + 17 * max(0, distance - 1.5)) * autos,
-            "note": f"{_plural(autos, 'auto')} for {people} · door to door",
+            "minutes": auto["minutes"],
+            "fare_inr": auto["fare_inr"],
+            "note": f"{_plural(auto['vehicles'], 'auto')} for {people} · door to door",
             "sub": "Typical meter-style estimate; not a provider quote",
             "kind": "ride",
         }

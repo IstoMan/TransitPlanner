@@ -83,6 +83,7 @@ export default function ReportsPage({
         destinationName={to}
         routeColor={optionColor(selected)}
         mode={selected?.id}
+        viaName={selected?.via}
         showRoute={showRoute}
         sparseNames={sparseNames}
         onPlace={onPlace}
