@@ -11,6 +11,11 @@ Thumbs.db
 node_modules/
 dist/
 build/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
 
 # Environment variables and local secrets
 .env
