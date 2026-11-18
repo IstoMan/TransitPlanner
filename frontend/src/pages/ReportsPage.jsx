@@ -1,6 +1,6 @@
-import ApiDownBanner from './ApiDownBanner.jsx';
-import MapCard from './MapCard.jsx';
-import TimeChart from './TimeChart.jsx';
+import ApiDownBanner from '../components/ApiDownBanner.jsx';
+import MapCard from '../components/MapCard.jsx';
+import TimeChart from '../components/TimeChart.jsx';
 import { optionColor, speed } from '../format.js';
 
 function metric(value, unit) {

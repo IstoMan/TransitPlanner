@@ -1,5 +1,5 @@
-import WeatherCard from './WeatherCard.jsx';
-import ApiDownBanner from './ApiDownBanner.jsx';
+import ApiDownBanner from '../components/ApiDownBanner.jsx';
+import WeatherCard from '../components/WeatherCard.jsx';
 
 export default function WeatherPage({ active, apiDown, onRetry, weather }) {
   return (
