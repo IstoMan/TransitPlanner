@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { project, projectChain } from '../format.js';
+import { routePath } from '../routePath.js';
 
 function roadPoints(names, byName) {
   const parts = [];
@@ -17,6 +18,7 @@ export default function MapView({
   originName,
   destinationName,
   routeColor,
+  mode,
   showRoute,
   sparseNames,
   onPlace,
@@ -30,7 +32,10 @@ export default function MapView({
   const originPoint = origin ? project(origin.lat, origin.lon) : null;
   const destinationPoint = destination ? project(destination.lat, destination.lon) : null;
   const different = Boolean(origin && destination && origin.name !== destination.name);
-  const routeD = different ? `M${originPoint.x} ${originPoint.y}L${destinationPoint.x} ${destinationPoint.y}` : '';
+  const routeD = useMemo(
+    () => (different ? routePath(geometry, origin, destination, mode) : ''),
+    [different, geometry, origin, destination, mode],
+  );
   const drawRoute = Boolean(showRoute && routeD);
   const sparse = new Set(sparseNames || []);
   const purple = geometry?.metro?.purple || [];

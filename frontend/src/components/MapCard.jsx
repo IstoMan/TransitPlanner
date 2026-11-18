@@ -6,6 +6,7 @@ export default function MapCard({
   originName,
   destinationName,
   routeColor,
+  mode,
   showRoute,
   sparseNames,
   onPlace,
@@ -27,6 +28,7 @@ export default function MapCard({
         originName={originName}
         destinationName={destinationName}
         routeColor={routeColor}
+        mode={mode}
         showRoute={showRoute}
         sparseNames={sparseNames}
         onPlace={onPlace}
