@@ -95,3 +95,6 @@ select,input[type=time]{width:100%;padding:10px;border-radius:6px;border:1px sol
 @media(max-width:1000px){.app{display:block}.side{display:none}.side.open{display:flex;position:fixed;left:0;top:0;z-index:15;width:min(280px,85vw)}.menu-toggle{display:inline-flex}.c3{grid-column:span 6}.c4,.c8{grid-column:span 12}.pg{grid-template-columns:1fr}.top,.grid{padding-left:16px;padding-right:16px}}
 @media(max-width:520px){.c3{grid-column:span 12}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.map-card{padding:0;overflow:hidden}
+.map-card svg{display:block;width:100%;height:auto;background:var(--mbg)}

@@ -1,16 +1,20 @@
 # Transit speed samples
 
+`samples.json` is the bundled demonstration data for the API and the random forest.
+
 ## Model input
 
-The Random Forest training rows are assembled in `js/script.js` from the bundled area-by-window values in `DATA.A`, area coordinates in `P`, and window midpoints in `WIN`.
+Training rows are one speed for each of the 14 areas in each of the three time windows, 42 rows in total.
 
-- Each of the 14 areas contributes one speed value for each of the three time windows, for 42 rows total.
-- The target is the speed value at `DATA.A[area][window][3]`, in km/h.
+- The target is `areas[area][window][3]`, in km/h.
+- `areas[area][window][1]` is the observation count used for sample coverage and the bus wait estimate.
 - Features are the normalized window midpoint (`minutes / 1440`), latitude, and longitude.
+
+Direct route speeds in `routes` still take priority over the model when the selected window has a sample for that pair.
 
 ## Evaluation
 
-The Reports page runs leave-one-window-out cross-validation. Each of the three folds trains on two windows and tests on the remaining window, so all 42 rows are evaluated once. A baseline predicts the mean speed from the two training windows. MAE and RMSE are reported in km/h for both approaches; lower values indicate smaller errors on these samples.
+The API runs leave-one-window-out cross-validation with scikit-learn's `RandomForestRegressor`. Each of the three folds trains on two windows and tests on the remaining window, so all 42 rows are evaluated once. A baseline predicts the mean speed from the two training windows. MAE and RMSE are reported in km/h for both approaches; lower values indicate smaller errors on these samples.
 
 This is an internal diagnostic, not an independent real-world validation: the dataset has only three aggregate time windows and repeats the same 14 areas across folds.
 
